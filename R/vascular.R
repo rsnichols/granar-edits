@@ -78,26 +78,30 @@ vascular <- function(all_cells, params, layers, center){
 
     i <- i+1
     for(angle in angle_seq){
-      x <- center + (xyl$r[-1] * cos(angle))
-      y <- center + (xyl$r[-1] * sin(angle))
-      all_xylem <- rbind(all_xylem, data.frame(x = x,
-                                               y = y,
-                                               d = xyl$d[-1],
-                                               angle = angle,
-                                               id_group = i))
-      all_cells <- rbind(all_cells, data.frame(
-        angle = angle,
-        radius = xyl$r[-1],
-        x = x,
-        y = y,
-        id_layer = 20,
-        id_cell = 1,
-        type = "xylem",
-        order = 1.5,
-        id_group = i
-      )
-      )
-      i <- i+1
+      # Create cells for each radius in xyl$r[-1]
+      if(nrow(xyl) > 1) {
+        for(j in 2:nrow(xyl)) {
+          x <- center + (xyl$r[j] * cos(angle))
+          y <- center + (xyl$r[j] * sin(angle))
+          all_xylem <- rbind(all_xylem, data.frame(x = x,
+                                                   y = y,
+                                                   d = xyl$d[j],
+                                                   angle = angle,
+                                                   id_group = i))
+          all_cells <- rbind(all_cells, data.frame(
+            angle = angle,
+            radius = xyl$r[j],
+            x = x,
+            y = y,
+            id_layer = 20,
+            id_cell = 1,
+            type = "xylem",
+            order = 1.5,
+            id_group = i
+          ))
+          i <- i+1
+        }
+      }
     }
     # Phloem vessels are built between xylem ones
     phl <- data.frame(r = max(all_cells$radius[all_cells$type == "stele"]) - (params$value[params$type == "cell_diameter" & params$name == "stele"])/2,
@@ -254,18 +258,34 @@ vascular <- function(all_cells, params, layers, center){
 
   # Change the identity of stele cells to be replaced by xylem cells
   if(plant_type == 2){
-    for(i in c(1:nrow(all_xylem))){
-      # print(i)
-      all_cells <- all_cells %>%
-        filter(!((x-all_xylem$x[i])^2 + (y - all_xylem$y[i])^2 < (all_xylem$d[i]/1.5)^2 & type == "stele")) # find the cells inside the xylem poles and remove them
-    }
-  }
-
-  if(plant_type == 2){
-    all_xylem <- all_cells[all_cells$type == "xylem",]%>%
-      mutate(radius = round(radius,2),
-             d = c(xyl$d[1], rep(xyl$d[2:length(xyl$d)],
-                                 max(unique(all_cells$id_group[all_cells$type == "xylem"]))-1)))# %>%
+    # Check if there are any xylem cells
+    xylem_cells <- all_cells[all_cells$type == "xylem",]
+    if(nrow(xylem_cells) > 0) {
+      max_id_group <- max(unique(xylem_cells$id_group))
+      rep_times <- max_id_group - 1
+      
+      # Debug information
+      if(verbatim) {
+        message(paste("Debug: max_id_group =", max_id_group))
+        message(paste("Debug: rep_times =", rep_times))
+        message(paste("Debug: length(xyl$d) =", length(xyl$d)))
+      }
+      
+      # Ensure rep_times is valid and xyl$d has enough elements
+      if(rep_times > 0 && length(xyl$d) > 1 && is.finite(rep_times)) {
+        all_xylem <- xylem_cells %>%
+          mutate(radius = round(radius,2),
+                 d = c(xyl$d[1], rep(xyl$d[2:length(xyl$d)], rep_times)))
+      } else {
+        # Fallback: use just the first diameter for all cells
+        all_xylem <- xylem_cells %>%
+          mutate(radius = round(radius,2),
+                 d = xyl$d[1])
+      }
+    } else {
+      # No xylem cells found, create empty dataframe
+      all_xylem <- data.frame()
+    }# %>%
     # Remove xylem cell that are to close to each other
     # filter(!duplicated(angle), !duplicated(radius))
     all_cells <- all_cells[all_cells$type != "xylem",]
